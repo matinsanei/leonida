@@ -2301,6 +2301,39 @@ BOOL WINAPI TitleVirtualProtect(LPVOID address, SIZE_T size, DWORD protect, PDWO
     return result;
 }
 
+bool is_current_process(HANDLE process) {
+    return !process || process == GetCurrentProcess() || GetProcessId(process) == GetCurrentProcessId();
+}
+
+LPVOID WINAPI TitleVirtualAllocEx(HANDLE process, LPVOID address, SIZE_T size, DWORD allocation_type, DWORD protect) {
+    if (!is_current_process(process)) {
+        return ::VirtualAllocEx(process, address, size, allocation_type & ~(kMemGraphics | kMemTitle),
+                                host_protect(protect));
+    }
+    return TitleVirtualAlloc(address, size, allocation_type, protect);
+}
+
+BOOL WINAPI TitleVirtualProtectEx(HANDLE process, LPVOID address, SIZE_T size, DWORD protect, PDWORD old) {
+    if (!is_current_process(process)) return ::VirtualProtectEx(process, address, size, protect, old);
+    return TitleVirtualProtect(address, size, protect, old);
+}
+
+SIZE_T WINAPI TitleVirtualQuery(LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T length) {
+    return ::VirtualQuery(address, buffer, length);
+}
+
+SIZE_T WINAPI TitleVirtualQueryEx(HANDLE process, LPCVOID address, PMEMORY_BASIC_INFORMATION buffer, SIZE_T length) {
+    return ::VirtualQueryEx(process ? process : GetCurrentProcess(), address, buffer, length);
+}
+
+BOOL WINAPI XMemVirtualFree(void* address, SIZE_T size, DWORD free_type) {
+    return TitleVirtualFree(address, size, free_type);
+}
+
+BOOL WINAPI XMemVirtualProtect(void* address, SIZE_T size, DWORD new_protect, DWORD* old_protect) {
+    return TitleVirtualProtect(address, size, host_protect(new_protect), old_protect);
+}
+
 }  // namespace
 
 // The host bytes of the 64 KiB page at `address` (the 64 KiB-aligned address of the page), with the section kept
@@ -2918,9 +2951,13 @@ bool reopen_unowned(std::uintptr_t begin, std::uintptr_t end) {
 
 #define TITLE_VIRTUAL_MEMORY(dll)                                                               \
     {dll, "VirtualAlloc", reinterpret_cast<void*>(&TitleVirtualAlloc)},                          \
+    {dll, "VirtualAllocEx", reinterpret_cast<void*>(&TitleVirtualAllocEx)},                      \
     {dll, "VirtualFree", reinterpret_cast<void*>(&TitleVirtualFree)},                            \
     {dll, "VirtualFreeEx", reinterpret_cast<void*>(&TitleVirtualFreeEx)},                        \
-    {dll, "VirtualProtect", reinterpret_cast<void*>(&TitleVirtualProtect)}
+    {dll, "VirtualProtect", reinterpret_cast<void*>(&TitleVirtualProtect)},                      \
+    {dll, "VirtualProtectEx", reinterpret_cast<void*>(&TitleVirtualProtectEx)},                  \
+    {dll, "VirtualQuery", reinterpret_cast<void*>(&TitleVirtualQuery)},                          \
+    {dll, "VirtualQueryEx", reinterpret_cast<void*>(&TitleVirtualQueryEx)}
 
 // The classic libraries and the memory api sets a title's imports name.
 SHIM_TABLE(title_memory,
@@ -2941,6 +2978,8 @@ SHIM_TABLE(xmem,
     {"xmem.dll", "XMemVirtualQuery", reinterpret_cast<void*>(&XMemVirtualQuery)},
     {"xmem.dll", "XMemGetWorkingSetStatistics", reinterpret_cast<void*>(&XMemGetWorkingSetStatistics)},
     {"xmem.dll", "XMemVirtualAlloc", reinterpret_cast<void*>(&XMemVirtualAlloc)},
+    {"xmem.dll", "XMemVirtualFree", reinterpret_cast<void*>(&XMemVirtualFree)},
+    {"xmem.dll", "XMemVirtualProtect", reinterpret_cast<void*>(&XMemVirtualProtect)},
     {"xmem.dll", "XMemGetWriteWatch", reinterpret_cast<void*>(&XMemGetWriteWatch)},
     {"xmem.dll", "XMemResetWriteWatch", reinterpret_cast<void*>(&XMemResetWriteWatch)},
     {"xmem.dll", "XMemTransferMemory", reinterpret_cast<void*>(&XMemTransferMemory)},
