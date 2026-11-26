@@ -39,6 +39,7 @@
         }                                                                    \
     } while (0)
 
+#ifdef LEONIDA_TEST_NULL_DESCRIPTORS_SPV
 namespace {
 
 using namespace leonida;
@@ -244,6 +245,7 @@ int check_common(const std::array<std::uint32_t, result_words>& r) {
 }
 
 }  // namespace
+#endif
 
 int main() {
 #ifndef LEONIDA_TEST_NULL_DESCRIPTORS_SPV
