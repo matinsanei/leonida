@@ -172,6 +172,13 @@ void __cdecl game_cexit() {
 }
 void __cdecl game_c_exit() {}
 void __stdcall game_exit_process(UINT code) { end_run(static_cast<int>(code)); }
+BOOL WINAPI game_terminate_process(HANDLE process, UINT exit_code) {
+    if (process == GetCurrentProcess() || process == nullptr ||
+        process == reinterpret_cast<HANDLE>(static_cast<intptr_t>(-1))) {
+        end_run(static_cast<int>(exit_code));
+    }
+    return TerminateProcess(process, exit_code);
+}
 
 // ---- threads and processors
 // The console has cores a PC may lack, and a title pins its threads to them with masks the host rejects: Windows
@@ -390,6 +397,20 @@ wchar_t** current_wide_environment() {
     return _wenviron;
 }
 
+int __cdecl game_initialize_narrow_environment() {
+    (void)current_environment();
+    return 0;
+}
+int __cdecl game_initialize_wide_environment() {
+    (void)current_wide_environment();
+    return 0;
+}
+char** __cdecl game_get_initial_narrow_environment() { return current_environment(); }
+wchar_t** __cdecl game_get_initial_wide_environment() { return current_wide_environment(); }
+using TlsCallbackFn = void(__cdecl*)(void*, DWORD, void*);
+int __cdecl game_register_thread_local_exe_atexit_callback(TlsCallbackFn) { return 0; }
+void __cdecl game_set_app_type(int) {}
+
 // msvcrt.dll: int __getmainargs(int* argc, char*** argv, char*** env, int expand, void* startinfo)
 int __cdecl game_getmainargs(int* argc, char*** argv, char*** env, int, void*) {
     if (const int error = game_configure_narrow_argv(1)) return error;
@@ -497,11 +518,19 @@ using namespace rt::process;
     {dll, "__p___wargv", reinterpret_cast<void*>(&game_p_wargv)}, \
     {dll, "_configure_narrow_argv", reinterpret_cast<void*>(&game_configure_narrow_argv)}, \
     {dll, "_configure_wide_argv", reinterpret_cast<void*>(&game_configure_wide_argv)}, \
+    {dll, "_initialize_narrow_environment", reinterpret_cast<void*>(&game_initialize_narrow_environment)}, \
+    {dll, "_initialize_wide_environment", reinterpret_cast<void*>(&game_initialize_wide_environment)}, \
+    {dll, "_get_initial_narrow_environment", reinterpret_cast<void*>(&game_get_initial_narrow_environment)}, \
+    {dll, "_get_initial_wide_environment", reinterpret_cast<void*>(&game_get_initial_wide_environment)}, \
+    {dll, "_register_thread_local_exe_atexit_callback", reinterpret_cast<void*>(&game_register_thread_local_exe_atexit_callback)}, \
+    {dll, "_set_app_type", reinterpret_cast<void*>(&game_set_app_type)}, \
     {dll, "__p__acmdln", reinterpret_cast<void*>(&game_p_acmdln_storage)}, \
     {dll, "__p__wcmdln", reinterpret_cast<void*>(&game_p_wcmdln_storage)}, \
     {dll, "_get_narrow_winmain_command_line", reinterpret_cast<void*>(&game_get_narrow_winmain_command_line)}, \
     {dll, "_get_wide_winmain_command_line", reinterpret_cast<void*>(&game_get_wide_winmain_command_line)}
-#define EXIT_PROCESS(dll) {dll, "ExitProcess", reinterpret_cast<void*>(&game_exit_process)}
+#define EXIT_PROCESS(dll) \
+    {dll, "ExitProcess", reinterpret_cast<void*>(&game_exit_process)}, \
+    {dll, "TerminateProcess", reinterpret_cast<void*>(&game_terminate_process)}
 #define THREAD_AFFINITY(dll) {dll, "SetThreadAffinityMask", reinterpret_cast<void*>(&game_set_thread_affinity_mask)}
 #define THREAD_GROUP_AFFINITY(dll) \
     {dll, "SetThreadGroupAffinity", reinterpret_cast<void*>(&game_set_thread_group_affinity)}
@@ -528,6 +557,9 @@ SHIM_TABLE(process,
     EXIT_PROCESS("kernel32.dll"),
     EXIT_PROCESS("kernelbase.dll"),
     EXIT_PROCESS("api-ms-win-core-processthreads-l1-1-0.dll"),
+    EXIT_PROCESS("api-ms-win-core-processthreads-l1-1-1.dll"),
+    EXIT_PROCESS("api-ms-win-core-processthreads-l1-1-2.dll"),
+    EXIT_PROCESS("api-ms-win-core-processthreads-l1-1-3.dll"),
     THREAD_AFFINITY("kernel32.dll"),
     THREAD_AFFINITY("kernelbase.dll"),
     THREAD_AFFINITY("api-ms-win-core-processthreads-l1-1-0.dll"),
@@ -544,4 +576,5 @@ SHIM_TABLE(process,
     COMMAND_LINE("kernel32.dll"),
     COMMAND_LINE("kernelbase.dll"),
     COMMAND_LINE("api-ms-win-core-processenvironment-l1-1-0.dll"),
+    COMMAND_LINE("api-ms-win-core-processenvironment-l1-2-0.dll"),
 );
